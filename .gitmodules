@@ -1,0 +1,3 @@
+[submodule "smts_implementation"]
+	path = smts_implementation
+	url = https://github.com/jjimenez02/smts_implementation.git
