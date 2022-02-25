@@ -2,6 +2,8 @@ import pandas as pd
 from collections import defaultdict
 from scipy.stats import linregress
 from sklearn.preprocessing import StandardScaler
+from scipy.fft import fft
+import numpy as np
 
 
 def standardize_data(
@@ -195,6 +197,37 @@ def temporal_differences_fn(
     return pd.DataFrame(data_with_differences)
 
 
+def temporal_fft_fn(
+        df,
+        headers=None,
+        id_col_name='id',
+        class_col_name='class',
+        time_col_name='TimeStamp'):
+    columns, real_columns = __temporal_fft_setup_cols(
+        df, id_col_name, class_col_name, time_col_name)
+
+    all_serie_transformed = None
+
+    for column in columns:
+        serie_transformed = fft(df[column].to_numpy())
+        serie_transformed = np.c_[df[column].to_numpy(), np.real(
+            serie_transformed), np.imag(serie_transformed)]
+        if all_serie_transformed is None:
+            all_serie_transformed = serie_transformed
+        else:
+            all_serie_transformed = np.c_[
+                all_serie_transformed, serie_transformed]
+
+    pd_serie_tf = pd.DataFrame(all_serie_transformed, columns=real_columns)
+    pd_serie_tf.insert(0, id_col_name,
+                       df[id_col_name].to_numpy())
+    pd_serie_tf.insert(1, time_col_name,
+                       df[time_col_name].to_numpy())
+    pd_serie_tf.insert(pd_serie_tf.shape[1], class_col_name,
+                       df[class_col_name].to_numpy())
+    return pd_serie_tf
+
+
 def __setup_cols(
         prefix,
         df_columns,
@@ -261,3 +294,21 @@ def __temporal_differences_setup_cols(
     final_columns.append(class_col_name)
 
     return final_columns
+
+
+def __temporal_fft_setup_cols(
+        df,
+        id_col_name='id',
+        class_col_name='class',
+        time_col_name='TimeStamp'):
+    columns = df.drop([id_col_name, time_col_name,
+                      class_col_name], axis=1).columns
+    real_columns = df.drop([id_col_name, time_col_name,
+                           class_col_name], axis=1).columns
+
+    for column in columns:
+        idx = real_columns.get_loc(column)+1
+        real_columns = real_columns.insert(idx, column+"Real")
+        real_columns = real_columns.insert(idx+1, column+"Imag")
+
+    return columns, real_columns
