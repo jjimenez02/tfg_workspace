@@ -121,6 +121,10 @@ def temporal_trend_fn(
         id_col_name='id',
         class_col_name='class',
         time_col_name='TimeStamp'):
+    '''
+    It will get the differences between two neighboor points
+    of the same feature.
+    '''
     columns = __temporal_trend_setup_cols(
         df,
         id_col_name,
@@ -152,6 +156,43 @@ def temporal_trend_fn(
         previous_sample = sample
 
     return pd.DataFrame(data_with_features_diff)
+
+
+def temporal_differences_fn(
+        df,
+        headers=None,
+        id_col_name='id',
+        class_col_name='class',
+        time_col_name='TimeStamp'):
+    '''
+    It will get the numeric differences between all data's attributes
+
+    [A1, B1
+     A2, B2
+     A3, B3
+     ...] -> [A1-B1
+              A2-B2
+              A3-B3
+              ...]
+    '''
+    columns = __temporal_differences_setup_cols(
+        df,
+        id_col_name,
+        class_col_name,
+        time_col_name
+    )
+
+    data_with_differences = {}
+
+    for column in columns:
+        attrs_to_sub = column.split('-')
+        if len(attrs_to_sub) == 2:
+            data_with_differences[column] = \
+                (df[attrs_to_sub[0]]-df[attrs_to_sub[1]]).to_numpy()
+        else:
+            data_with_differences[column] = df[column].to_numpy()
+
+    return pd.DataFrame(data_with_differences)
 
 
 def __setup_cols(
@@ -187,6 +228,34 @@ def __temporal_trend_setup_cols(
     for attr in columns:
         final_columns.append(attr)
         final_columns.append(attr + 'Diff')
+
+    final_columns.insert(0, id_col_name)
+    final_columns.append(class_col_name)
+
+    return final_columns
+
+
+def __temporal_differences_setup_cols(
+        df,
+        id_col_name='id',
+        class_col_name='class',
+        time_col_name='TimeStamp'):
+    final_columns = []
+
+    columns = list(df.columns)
+    columns.remove(id_col_name)
+    columns.remove(class_col_name)
+    columns.remove(time_col_name)
+
+    final_columns.append(time_col_name)
+    for first_attr in columns:
+        final_columns.append(first_attr)
+        for second_attr in columns:
+            attr_diff_col = first_attr + '-' + second_attr
+            if (first_attr != second_attr) and \
+                (attr_diff_col not in final_columns) and \
+                    (second_attr + '-' + first_attr not in final_columns):
+                final_columns.append(attr_diff_col)
 
     final_columns.insert(0, id_col_name)
     final_columns.append(class_col_name)
