@@ -1,7 +1,7 @@
 import pandas as pd
 import os
-import Utils.classifier_utils as clfutils
-import Utils.codifications as codifications
+import utils.classifier_utils as clfutils
+import utils.codifications as codifications
 from collections import defaultdict
 
 
@@ -15,7 +15,7 @@ class Data():
     `derived_data`'s attr.
     '''
     @staticmethod
-    def extract_data(
+    def extract_seguimiento_ocular_data(
             data_path,
             folders_id,
             file_prefix='data_',
@@ -30,14 +30,14 @@ class Data():
             relative_path = data_path + str(folder_id) + '/'
             n_files = len(os.listdir(relative_path))
             for i in range(1, n_files):
-                file_data = Data.__parse_file(
+                file_data = Data.__parse_seguimiento_ocular_file(
                     relative_path, file_prefix, folder_id, i, file_ext)
                 all_data = all_data.append(file_data, ignore_index=True)
 
         return all_data
 
     @staticmethod
-    def __parse_file(
+    def __parse_seguimiento_ocular_file(
             relative_path,
             file_prefix,
             folder_id,
@@ -61,7 +61,8 @@ class Data():
     def __init__(self, data_path: str, folders_id: list):
         self.data_path = data_path
         self.folders_id = folders_id
-        self.original_data = Data.extract_data(
+        # FIXME - HardCoded seguimiento_ocular
+        self.original_data = Data.extract_seguimiento_ocular_data(
             self.data_path, self.folders_id)
         self.derived_data = self.original_data.copy(deep=True)
         self.derived_data_windows_per_serie = None
@@ -135,6 +136,7 @@ class Data():
             headers=None,
             df=None,
             id_col_name='id',
+            time_col_name='TimeStamp',
             class_col_name='class'):
         data = self.derived_data if df is None else df
         identifiers =\
@@ -148,7 +150,9 @@ class Data():
             codification_fns[0],
             identifiers,
             columns,
-            id_col_name=id_col_name
+            id_col_name=id_col_name,
+            time_col_name=time_col_name,
+            class_col_name=class_col_name
         )
 
         for codification_fn in codification_fns[1:]:
@@ -157,8 +161,9 @@ class Data():
                 codification_fn,
                 identifiers,
                 columns,
-                id_col_name,
-                id_col_name=id_col_name
+                id_col_name=id_col_name,
+                time_col_name=time_col_name,
+                class_col_name=class_col_name
             )
 
             new_df = pd.merge(
@@ -340,11 +345,18 @@ class Data():
             codification_fn,
             identifiers,
             headers,
-            id_col_name='id'):
+            id_col_name='id',
+            time_col_name='TimeStamp',
+            class_col_name='class'):
         new_df = pd.DataFrame()
         for identifier in identifiers:
             serie = df[df[id_col_name] == identifier]
-            new_df = new_df.append(codification_fn(serie, headers))
+            new_df = new_df.append(codification_fn(
+                serie,
+                headers,
+                id_col_name=id_col_name,
+                time_col_name=time_col_name,
+                class_col_name=class_col_name))
 
         new_df.reset_index(inplace=True, drop=True)
         return new_df

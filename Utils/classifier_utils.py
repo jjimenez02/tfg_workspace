@@ -3,7 +3,7 @@ import random
 import pandas as pd
 from sklearn.base import clone
 from joblib import Parallel, delayed
-from Utils import codifications
+from utils import codifications
 
 
 def train_test_split(
