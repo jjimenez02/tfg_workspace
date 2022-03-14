@@ -58,12 +58,8 @@ class Data():
 
         return serie_data
 
-    def __init__(self, data_path: str, folders_id: list):
-        self.data_path = data_path
-        self.folders_id = folders_id
-        # FIXME - HardCoded seguimiento_ocular
-        self.original_data = Data.extract_seguimiento_ocular_data(
-            self.data_path, self.folders_id)
+    def __init__(self, df: pd.DataFrame):
+        self.original_data = df
         self.derived_data = self.original_data.copy(deep=True)
         self.derived_data_windows_per_serie = None
 
