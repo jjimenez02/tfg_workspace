@@ -1,5 +1,4 @@
 import pandas as pd
-import os
 import utils.classifier_utils as clfutils
 import utils.codifications as codifications
 from collections import defaultdict
@@ -7,56 +6,13 @@ from collections import defaultdict
 
 class Data():
     '''
-    This class' function is to build a flat Pandas DataFrame
+    This class' target is to build a flat Pandas DataFrame
     originated from a pre-determined folder's jerarchy.
 
     All functions will have a `df`'s parameter, if it isn't specified
     then changes will be done with `derived_data`'s attr and saved into
     `derived_data`'s attr.
     '''
-    @staticmethod
-    def extract_seguimiento_ocular_data(
-            data_path,
-            folders_id,
-            file_prefix='data_',
-            file_ext='.tsv'):
-        '''
-        It will extract data from `data_path`'s folders
-        explicited in `folders_id`'s parameter.
-        '''
-        all_data = pd.DataFrame()
-
-        for folder_id in folders_id:
-            relative_path = data_path + str(folder_id) + '/'
-            n_files = len(os.listdir(relative_path))
-            for i in range(1, n_files):
-                file_data = Data.__parse_seguimiento_ocular_file(
-                    relative_path, file_prefix, folder_id, i, file_ext)
-                all_data = all_data.append(file_data, ignore_index=True)
-
-        return all_data
-
-    @staticmethod
-    def __parse_seguimiento_ocular_file(
-            relative_path,
-            file_prefix,
-            folder_id,
-            file_id,
-            file_ext):
-        serie_file = relative_path + file_prefix + str(file_id) + file_ext
-        serie_data = pd.read_csv(serie_file, delimiter='\t')
-
-        # Hard-coded into Seguimiento Ocular's specific case
-        with open(relative_path + 'class.txt') as class_file:
-            class_data = class_file.readline()
-        serie_class, serie_diagnosis, age = class_data.split('-')
-
-        serie_data.insert(0, 'id', str(folder_id) + '-' + str(file_id))
-        serie_data.insert(2, 'Age', age)
-        serie_data.insert(serie_data.shape[1], 'class', serie_class)
-        serie_data.insert(serie_data.shape[1], 'diagnosis', serie_diagnosis)
-
-        return serie_data
 
     def __init__(self, df: pd.DataFrame):
         self.original_data = df
