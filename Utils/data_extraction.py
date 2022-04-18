@@ -2,6 +2,7 @@ import pandas as pd
 import utils.classifier_utils as clfutils
 import utils.codifications as codifications
 from collections import defaultdict
+from utils.plot_utils import plot_series_from_df_by_id
 
 
 class Data():
@@ -16,6 +17,9 @@ class Data():
 
     def __init__(self, df: pd.DataFrame):
         self.original_data = df
+        self.reset_changes()
+
+    def reset_changes(self):
         self.derived_data = self.original_data.copy(deep=True)
         self.derived_data_windows_per_serie = None
 
@@ -272,6 +276,17 @@ class Data():
         else:
             raise Exception('Not recognized criterion, available criterions are:\
                     \'tfm_marta\', \'normal\', \'windowed\'')
+
+    def plot_series_by_id(
+            self,
+            ids,
+            attr,
+            df=None,
+            id_col_name="id",
+            time_col_name="TimeStamp"):
+        data = self.derived_data if df is None else df
+        plot_series_from_df_by_id(data, ids, attr, id_col_name=id_col_name,
+                                  time_col_name=time_col_name)
 
     def __remove_rows(self, df, value, headers):
         for header in headers:
