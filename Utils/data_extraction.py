@@ -1,4 +1,6 @@
+import math
 import pandas as pd
+import numpy as np
 import utils.classifier_utils as clfutils
 import utils.codifications as codifications
 from collections import defaultdict
@@ -15,13 +17,42 @@ class Data():
     `derived_data`'s attr.
     '''
 
-    def __init__(self, df: pd.DataFrame):
+    @staticmethod
+    def concat_data(
+            data1: pd.DataFrame,
+            data2: pd.DataFrame,
+            id_col_name='id'):
+        '''
+        This static method will concat two "Data"'s types into a single one.
+
+        If there are conflicts with the Primary Key (id) this method will
+        concat the second "Data" to the first one replacing all ids by the
+        subsequent to the last "Data"'s id (one by one).
+        '''
+        new_df = data1.copy(deep=True)
+        data2_identificators = pd.unique(data2[id_col_name])
+
+        for data2_identif in data2_identificators:
+            data2_actual_serie = data2[data2[id_col_name] == data2_identif]
+
+            if data2_identif in new_df[id_col_name].values:
+                data2_actual_serie[id_col_name] =\
+                    new_df.iloc[-1][id_col_name] + 1
+
+            new_df = pd.concat([new_df, data2_actual_serie])
+
+        return new_df
+
+    def __init__(self, df: pd.DataFrame, windows_per_serie=None):
         self.original_data = df
+        self.original_data_windows_per_serie = windows_per_serie
         self.reset_changes()
 
     def reset_changes(self):
-        self.derived_data = self.original_data.copy(deep=True)
-        self.derived_data_windows_per_serie = None
+        self.derived_data =\
+            self.original_data.copy(deep=True)
+        self.derived_data_windows_per_serie =\
+            self.original_data_windows_per_serie
 
     def get_derived_data_windows_per_serie(self, default=None):
         windows_per_serie = self.derived_data_windows_per_serie\
@@ -35,6 +66,43 @@ class Data():
 
     def get_derived_data_identifiers(self, id_col_name='id'):
         return pd.unique(self.derived_data[id_col_name])
+
+    def get_derived_data_classes_count(
+            self,
+            id_col_name='id',
+            class_col_name='class'):
+        return self.derived_data.groupby(id_col_name).first()[
+            class_col_name].value_counts()
+
+    def get_shortest_serie(self, df=None, id_col_name='id'):
+        data = self.derived_data if df is None else df
+        identificators = pd.unique(data[id_col_name])
+
+        shortest_serie = (-1, np.inf)
+        for identif in identificators:
+            actual_serie = data[data[id_col_name] == identif]
+            if (shortest_serie[1] > actual_serie.shape[0]):
+                shortest_serie = (identif, actual_serie.shape[0])
+
+        if (shortest_serie[0] == -1):
+            raise Exception("There are not valid series in the dataset")
+
+        return data[data[id_col_name] == shortest_serie[0]]
+
+    def get_largest_serie(self, df=None, id_col_name='id'):
+        data = self.derived_data if df is None else df
+        identificators = pd.unique(data[id_col_name])
+
+        largest_serie = (-1, -np.inf)
+        for identif in identificators:
+            actual_serie = data[data[id_col_name] == identif]
+            if (largest_serie[1] < actual_serie.shape[0]):
+                largest_serie = (identif, actual_serie.shape[0])
+
+        if (largest_serie[0] == -1):
+            raise Exception("There are not valid series in the dataset")
+
+        return data[data[id_col_name] == largest_serie[0]]
 
     def get_derived_data_columns(
             self,
@@ -148,22 +216,24 @@ class Data():
             df=None,
             headers=None,
             low_quant=.05,
-            high_quant=.95):
+            high_quant=.95,
+            outliers_limit=.3,
+            id_col_name='id'):
+        '''
+        This method will remove all series with a outliers' percentage greater
+        than outliers_limit's parameter.
+
+        We consider an outlier a sample with at least a dimension out of the
+        low_quant and high_quant's percentiles.
+        '''
         data = self.derived_data if df is None else df
 
-        standardizedData = codifications\
-            .standardize_data(data, headers=headers)
-        quant_df = standardizedData.quantile([low_quant, high_quant])
+        remaining_data = self.__filter_outside_quantil_samples(
+            data, headers, low_quant, high_quant)
+        data = self.__remove_outliers_by_outliers_limit(
+            data, remaining_data, outliers_limit, id_col_name)
 
-        for header in headers:
-            standardizedData = standardizedData[
-                (standardizedData[header] > quant_df.loc[low_quant, header])
-                & (standardizedData[header] < quant_df.loc[high_quant, header])
-            ]
-
-        data = data.loc[standardizedData.index]
         data.reset_index(inplace=True, drop=True)
-
         return self.__save_data(data, df is None)
 
     def reduce_sampling_rate(
@@ -192,20 +262,32 @@ class Data():
     def split_into_windows(
             self,
             df=None,
-            n_windows=4,
+            n_windows=None,
+            window_size=None,
             id_col_name='id'):
         data = self.derived_data if df is None else df
+
+        if (n_windows is None and window_size is None):
+            raise Exception("You have to specify a window size")
 
         new_df = pd.DataFrame()
         series_id = pd.unique(data[id_col_name])
         windows_per_serie = defaultdict(list)
 
+        actual_n_windows = 0.0
         for serie_id in series_id:
+            actual_serie = data[data[id_col_name] == serie_id]
+            if (n_windows is None):
+                actual_n_windows = math.ceil(
+                    float(actual_serie.shape[0])/float(window_size))
+            else:
+                actual_n_windows = n_windows
+
             new_df = new_df.append(self.__split_serie_into_windows(
-                data[data[id_col_name] == serie_id],
+                actual_serie,
                 windows_per_serie,
                 serie_id,
-                n_windows,
+                actual_n_windows,
                 id_col_name
             ), ignore_index=True)
 
@@ -327,6 +409,45 @@ class Data():
 
         new_df.reset_index(inplace=True, drop=True)
         return new_df
+
+    def __filter_outside_quantil_samples(
+            self,
+            data,
+            headers,
+            low_quant,
+            high_quant):
+        standardizedData = codifications\
+            .standardize_data(data, headers=headers)
+        quant_df = standardizedData.quantile([low_quant, high_quant])
+
+        for header in headers:
+            standardizedData = standardizedData[
+                (standardizedData[header] > quant_df.loc[low_quant, header])
+                & (standardizedData[header] < quant_df.loc[high_quant, header])
+            ]
+
+        return data.loc[standardizedData.index]
+
+    def __remove_outliers_by_outliers_limit(
+            self,
+            data,
+            remaining_data,
+            outliers_limit,
+            id_col_name):
+        identificators = pd.unique(data[id_col_name])
+        for identif in identificators:
+            actual_serie = data[data[id_col_name] == identif]
+            remaining_serie =\
+                remaining_data[remaining_data[id_col_name] == identif]
+
+            remaining_serie_proportion =\
+                float(remaining_serie.shape[0])/float(actual_serie.shape[0])
+
+            if remaining_serie_proportion == 0 or\
+                    1 - remaining_serie_proportion >= outliers_limit:
+                data = data.drop(actual_serie.index)
+
+        return data
 
     def __split_serie_into_windows(
             self,
