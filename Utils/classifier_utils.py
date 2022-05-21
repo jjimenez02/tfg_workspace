@@ -4,6 +4,8 @@ import pandas as pd
 from sklearn.base import clone
 from joblib import Parallel, delayed
 from utils import codifications
+from collections import defaultdict
+from sklearn.metrics import classification_report
 
 
 def train_test_split(
@@ -184,6 +186,30 @@ def train_validate(
     ) for _ in range(0, times_to_repeat))
 
 
+def windowed_cross_val(
+        clf,
+        windowed_series,
+        relation_with_series,
+        cv=3,
+        seed=None,
+        drop_columns=['id', 'class'],
+        n_jobs=-2,
+        custom_estimator=False,
+        id_col_name='id'):
+    partitions_ids = __get_cross_val_partition_series_ids(
+        list(relation_with_series.keys()), cv, seed)
+    windowed_partitions_ids = __build_windowed_partitions(
+        partitions_ids, relation_with_series)
+
+    return Parallel(n_jobs=n_jobs)(delayed(__parallel_windowed_cross_val)(
+        clone_estimator(clf, custom_estimator),
+        windowed_series,
+        windowed_partition,
+        drop_columns,
+        id_col_name
+    ) for windowed_partition in windowed_partitions_ids)
+
+
 def clone_estimator(clf, custom_estimator=False):
     if (custom_estimator):
         return clf.clone()
@@ -326,3 +352,84 @@ def __get_train_test_split_limit_index(
             'you have to specify a list of identificators to split')
     return len(identificators) - math.floor(len(identificators)*test_size)\
         if train_size is None else math.floor(len(identificators)*train_size)
+
+
+def __get_cross_val_partition_series_ids(series_ids, cv=3, seed=None):
+    partitions = []
+    random.seed(seed)
+    random.shuffle(series_ids)
+    proportion = int(len(series_ids)/cv)
+
+    if cv <= 1:
+        raise Exception(
+            'You have to specify a number of folds greater than 1'
+        )
+
+    if proportion <= 0:
+        raise Exception(
+            'You have to specify a number of folds ' +
+            'less than the number of samples')
+
+    for i in range(0, cv):
+        partition = {}
+
+        if i == (cv-1):
+            partition['test'] = series_ids[i*proportion:]
+        else:
+            partition['test'] = series_ids[i*proportion:((i+1)*proportion)]
+
+        partition['train'] = series_ids.copy()
+        partition['train'] =\
+            [elem for elem in partition['train']
+                if elem not in partition['test']]
+        partitions.append(partition)
+
+    return partitions
+
+
+def __build_windowed_partitions(series_ids_partitions, relation_with_series):
+    windowed_partitions_ids = []
+
+    for partition in series_ids_partitions:
+        windowed_partition = defaultdict(list)
+        for train_id in partition['train']:
+            windowed_partition['train'].extend(relation_with_series[train_id])
+        for test_id in partition['test']:
+            windowed_partition['test'].extend(relation_with_series[test_id])
+        windowed_partitions_ids.append(windowed_partition)
+
+    return windowed_partitions_ids
+
+
+def __parallel_windowed_cross_val(
+        clf,
+        windowed_series,
+        windowed_partition,
+        drop_columns,
+        id_col_name='id'):
+    __fit_stimator(clf, windowed_series, windowed_partition, drop_columns)
+    X_test, y_test = __get_sample_and_class_by_series_ids(
+        windowed_series, windowed_partition['test'],
+        drop_columns=drop_columns)
+
+    # FIXME: Specific to SMTS
+    y_test = X_test.assign(class_name=y_test).groupby(
+        id_col_name).first()['class_name'].to_numpy()
+
+    y_pred = clf.predict(X_test)
+
+    return classification_report(y_test, y_pred, output_dict=True)
+
+
+def __fit_stimator(clf, windowed_series, windowed_partition, drop_columns):
+    X_train, y_train = __get_sample_and_class_by_series_ids(
+        windowed_series, windowed_partition['train'],
+        drop_columns=drop_columns)
+    clf.fit(X_train, y_train)
+
+
+def __get_sample_and_class_by_series_ids(df, series_ids, drop_columns=[]):
+    X = df.loc[df['id'].isin(series_ids)].drop(
+        drop_columns, errors='ignore', axis=1)
+    y = df.loc[df['id'].isin(series_ids)]['class'].to_numpy()
+    return X, y
