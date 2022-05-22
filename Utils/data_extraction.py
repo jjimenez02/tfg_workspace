@@ -45,7 +45,14 @@ class Data():
 
     def __init__(self, df: pd.DataFrame, windows_per_serie=None):
         self.original_data = df
-        self.original_data_windows_per_serie = windows_per_serie
+        if windows_per_serie is None:
+            # Default windows_per_serie assignation
+            self.original_data_windows_per_serie = {}
+            identificators = pd.unique(self.original_data['id'])
+            for identif in identificators:
+                self.original_data_windows_per_serie[identif] = [identif]
+        else:
+            self.original_data_windows_per_serie = windows_per_serie
         self.reset_changes()
 
     def reset_changes(self):
