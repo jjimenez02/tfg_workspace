@@ -1,11 +1,16 @@
 import math
 import random
+import numpy as np
 import pandas as pd
+import utils.constants as cs
 from sklearn.base import clone
 from joblib import Parallel, delayed
 from utils import codifications
 from collections import defaultdict
 from sklearn.metrics import classification_report
+from keras.models import Sequential
+from keras.optimizers import RMSprop
+from keras.layers import Dense, LSTM
 
 
 def compute_classification_reports_means(reports: list):
@@ -33,6 +38,40 @@ def compute_classification_reports_means(reports: list):
                 final_report[key][subkey] /= n_reports
 
     return final_report
+
+
+def apply_lstm_format(
+        X: np.array,
+        y: np.array,
+        n_series: int,
+        series_length: int,
+        sequences_fragmenter: int,
+        labels_encoder):
+    X = X.astype('float32')
+    X = X.reshape(
+        n_series*sequences_fragmenter,
+        int(series_length/sequences_fragmenter),
+        X.shape[1]
+    )
+    y = labels_encoder.transform(y.reshape(-1, 1)).toarray()
+    y = np.repeat(y, repeats=sequences_fragmenter, axis=0)
+
+    return X, y
+
+
+def lstm_build_model(units, learning_rate, n_classes):
+    nn = Sequential()
+    nn.add(LSTM(units=12))
+    nn.add(Dense(4, 'sigmoid'))
+    lstm_compile_model(nn, 0.001)
+    return nn
+
+
+def lstm_compile_model(nn, learning_rate):
+    nn.compile(
+        optimizer=RMSprop(learning_rate=learning_rate),
+        loss='categorical_crossentropy'
+    )
 
 
 def train_test_split(
@@ -217,31 +256,60 @@ def windowed_cross_val(
         clf,
         windowed_series,
         relation_with_series,
+        estimator_type,
         cv=3,
         seed=None,
         drop_columns=['id', 'class'],
         n_jobs=-2,
-        custom_estimator=False,
-        id_col_name='id'):
+        id_col_name='id',
+        lstm_dict={}):
+    '''
+    This method will execute a windowed cross validation over
+    a windowed series and a classificator.
+
+    You can determine wether the classificator is:
+        - 'classic': SkLearn's classificators
+        - 'LSTM': Keras' LSTM model
+        - 'SMTS': SMTS' custom model
+
+    If you select LSTM as the estimator you must give the following
+    parameters via ``lstm_dict``:
+        - series_length (int)
+        - sequences_fragmenter (int)
+        - fitted_labels_encoder (_BaseEncoder)
+        - argmax_fun (fun) -> None for binary classification
+        - n_classes (int)
+        - epochs (int)
+        - units (int)
+        - learning_rate (float)
+    '''
     partitions_ids = __get_cross_val_partition_series_ids(
         list(relation_with_series.keys()), cv, seed)
     windowed_partitions_ids = __build_windowed_partitions(
         partitions_ids, relation_with_series)
 
     return Parallel(n_jobs=n_jobs)(delayed(__parallel_windowed_cross_val)(
-        clone_estimator(clf, custom_estimator),
+        clone_estimator(clf, estimator_type),
         windowed_series,
         windowed_partition,
+        estimator_type,
         drop_columns,
-        id_col_name
+        id_col_name,
+        lstm_dict
     ) for windowed_partition in windowed_partitions_ids)
 
 
-def clone_estimator(clf, custom_estimator=False):
-    if (custom_estimator):
+def clone_estimator(clf, estimator_type):
+    if (estimator_type == cs.ESTIMATOR_SMTS):
         return clf.clone()
-    else:
+    elif (estimator_type == cs.ESTIMATOR_SKLEARN):
         return clone(clf)
+    elif (estimator_type == cs.ESTIMATOR_LSTM):
+        # This will be loaded later due to TensorFlow
+        # errors with pickle and Keras' models
+        return None
+    else:
+        raise Exception(cs.ERR_INVALID_ESTIMATOR_TYPE_MSSG)
 
 
 def __get_train_test_identificators(
@@ -432,31 +500,140 @@ def __parallel_windowed_cross_val(
         clf,
         windowed_series,
         windowed_partition,
+        estimator_type,
         drop_columns,
-        id_col_name='id'):
-    __fit_stimator(clf, windowed_series, windowed_partition, drop_columns)
-    X_test, y_test = __get_sample_and_class_by_series_ids(
-        windowed_series, windowed_partition['test'],
-        drop_columns=drop_columns)
+        id_col_name,
+        lstm_dict):
+    clf = __fit_estimator(
+        clf,
+        windowed_series,
+        windowed_partition,
+        estimator_type,
+        drop_columns,
+        id_col_name,
+        lstm_dict
+    )
+    y_test, y_pred = __predict_estimator(
+        clf,
+        windowed_series,
+        windowed_partition,
+        estimator_type,
+        drop_columns,
+        id_col_name,
+        lstm_dict
+    )
 
-    # FIXME: Specific to SMTS
-    y_test = X_test.assign(class_name=y_test).groupby(
-        id_col_name).first()['class_name'].to_numpy()
+    return classification_report(
+        y_test, y_pred, output_dict=True, zero_division=0)
+
+
+def __fit_estimator(
+        clf,
+        windowed_series,
+        windowed_partition,
+        estimator_type,
+        drop_columns,
+        id_col_name,
+        lstm_dict):
+    X_train, y_train = __get_sample_and_class_by_series_ids(
+        windowed_series,
+        windowed_partition['train'],
+        drop_columns=drop_columns
+    )
+
+    if (estimator_type == cs.ESTIMATOR_SKLEARN or
+            estimator_type == cs.ESTIMATOR_SMTS):
+        clf.fit(X_train, y_train)
+    elif estimator_type == cs.ESTIMATOR_LSTM:
+        # Collapse into one class per serie (auto. done in SMTS' train)
+        y_train = X_train.assign(class_name=y_train).groupby(
+            id_col_name).first()['class_name'].to_numpy()
+
+        # LSTM's input shape
+        X_train, y_train = apply_lstm_format(
+            X_train.to_numpy(),
+            y_train,
+            len(pd.unique(X_train[id_col_name])),
+            lstm_dict[cs.LSTM_SERIES_LENGTH],
+            lstm_dict[cs.LSTM_SEQUENCES_FRAGMENTER],
+            lstm_dict[cs.LSTM_FITTED_LABELS_ENCODER]
+        )
+
+        clf = lstm_build_model(
+            lstm_dict[cs.LSTM_HYP_PARAM_UNITS],
+            lstm_dict[cs.LSTM_HYP_PARAM_LEARNING_RATE],
+            lstm_dict[cs.LSTM_N_CLASSES]
+        )
+        clf.fit(
+            X_train,
+            y_train,
+            epochs=lstm_dict[cs.LSTM_HYP_PARAM_EPOCHS],
+            verbose=0
+        )
+    else:
+        raise Exception(cs.ERR_INVALID_ESTIMATOR_TYPE_MSSG)
+
+    return clf
+
+
+def __predict_estimator(
+        clf,
+        windowed_series,
+        windowed_partition,
+        estimator_type,
+        drop_columns,
+        id_col_name,
+        lstm_dict):
+    X_test, y_test = __get_sample_and_class_by_series_ids(
+        windowed_series,
+        windowed_partition['test'],
+        drop_columns=drop_columns
+    )
+
+    if (estimator_type == cs.ESTIMATOR_SMTS or
+            estimator_type == cs.ESTIMATOR_LSTM):
+        # Collapse into one class per serie
+        y_test = X_test.assign(class_name=y_test).groupby(
+            id_col_name).first()['class_name'].to_numpy()
+
+        if estimator_type == cs.ESTIMATOR_LSTM:
+            # LSTM's input shape
+            X_test, y_test = apply_lstm_format(
+                X_test.to_numpy(),
+                y_test,
+                len(pd.unique(X_test[id_col_name])),
+                lstm_dict[cs.LSTM_SERIES_LENGTH],
+                lstm_dict[cs.LSTM_SEQUENCES_FRAGMENTER],
+                lstm_dict[cs.LSTM_FITTED_LABELS_ENCODER]
+            )
+    elif estimator_type != cs.ESTIMATOR_SKLEARN:
+        raise Exception(cs.ERR_INVALID_ESTIMATOR_TYPE_MSSG)
 
     y_pred = clf.predict(X_test)
 
-    return classification_report(y_test, y_pred, output_dict=True)
+    if estimator_type == cs.ESTIMATOR_LSTM:
+        # Argmax if its specified (binary vs multiclass classification)
+        if lstm_dict[cs.LSTM_ARGMAX_FUNCTION] is not None:
+            y_pred = lstm_dict[cs.LSTM_ARGMAX_FUNCTION](
+                y_pred, lstm_dict[cs.LSTM_N_CLASSES])
+        # Inverse transformation in order to get class' names in the
+        # classification report.
+        y_test = lstm_dict[cs.LSTM_FITTED_LABELS_ENCODER]\
+            .inverse_transform(y_test)
+        y_pred = lstm_dict[cs.LSTM_FITTED_LABELS_ENCODER]\
+            .inverse_transform(y_pred)
+
+    return y_test, y_pred
 
 
-def __fit_stimator(clf, windowed_series, windowed_partition, drop_columns):
-    X_train, y_train = __get_sample_and_class_by_series_ids(
-        windowed_series, windowed_partition['train'],
-        drop_columns=drop_columns)
-    clf.fit(X_train, y_train)
-
-
-def __get_sample_and_class_by_series_ids(df, series_ids, drop_columns=[]):
-    X = df.loc[df['id'].isin(series_ids)].drop(
+def __get_sample_and_class_by_series_ids(
+        df,
+        series_ids,
+        drop_columns=[],
+        id_col_name='id',
+        class_col_name='class'):
+    X = df.loc[df[id_col_name].isin(series_ids)].drop(
         drop_columns, errors='ignore', axis=1)
-    y = df.loc[df['id'].isin(series_ids)]['class'].to_numpy()
+    y = df.loc[df[id_col_name].isin(series_ids)][class_col_name]\
+        .to_numpy()
     return X, y
