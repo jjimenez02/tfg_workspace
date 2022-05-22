@@ -119,6 +119,13 @@ class Data():
                 'class': class_col_name,
                 'attrs': columns}
 
+    def transform_derived_data_into_X_y(
+            self,
+            drop_columns=['id', 'TimeStamp']):
+        data = self.derived_data.drop(
+            drop_columns, axis=1, errors='ignore').to_numpy()
+        return data[:, :-1], data[:, -1]
+
     def drop_derived_data_columns(self, columns_names):
         self.derived_data = self.derived_data.drop(
             columns_names, errors='ignore', axis=1)
