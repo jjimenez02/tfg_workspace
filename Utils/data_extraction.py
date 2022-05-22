@@ -41,6 +41,7 @@ class Data():
 
             new_df = pd.concat([new_df, data2_actual_serie])
 
+        new_df.reset_index(inplace=True, drop=True)
         return new_df
 
     def __init__(self, df: pd.DataFrame, windows_per_serie=None):
@@ -60,6 +61,19 @@ class Data():
             self.original_data.copy(deep=True)
         self.derived_data_windows_per_serie =\
             self.original_data_windows_per_serie
+
+    def copy(self):
+        new_data = Data(
+            self.original_data.copy(deep=True),
+            self.original_data_windows_per_serie.copy()
+        )
+
+        new_data.derived_data =\
+            self.derived_data.copy(deep=True)
+        new_data.derived_data_windows_per_serie =\
+            self.derived_data_windows_per_serie.copy()
+
+        return new_data
 
     def get_derived_data_windows_per_serie(self, default=None):
         windows_per_serie = self.derived_data_windows_per_serie\
