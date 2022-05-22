@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from collections import defaultdict
 
 
 def plot_score(
@@ -54,6 +55,51 @@ def plot_score(
             accuracy_mode,
             model_name
         )
+
+
+def plot_series_from_df_by_id(
+        df,
+        ids,
+        attr,
+        id_col_name="id",
+        time_col_name="TimeStamp"):
+    _, ax = plt.subplots()
+
+    labels = []
+    for identificator in ids:
+        current_serie = df[df[id_col_name] == identificator]
+        labels.append("Serie " + str(identificator))
+
+        plt.plot(current_serie[time_col_name], current_serie[attr])
+
+    ax.set_ylabel(attr)
+    ax.set_xlabel(time_col_name)
+    ax.legend(labels)
+
+    plt.show()
+
+
+def plot_series(series, labels, x_label="TimeStamp", y_label="Value"):
+    _, ax = plt.subplots()
+
+    for current_serie in series:
+        plt.plot(current_serie.index, current_serie.values)
+
+    ax.set_ylabel(y_label)
+    ax.set_xlabel(x_label)
+    ax.legend(labels)
+
+    plt.show()
+
+
+def pretty_print_classification_report_dict(report: defaultdict):
+    for key in report.keys():
+        if key == 'accuracy':
+            print("{}: {}".format('Accuracy', report[key]))
+        else:
+            print("{}:".format(key))
+            for subkey in report[key].keys():
+                print("\t{}: {}".format(subkey, report[key][subkey]))
 
 
 def __get_unique_values_on_index(list_of_values, index):
@@ -133,38 +179,3 @@ def __plot_in_different_graphs(
         plt.title('{}\'s {} with predefined {}={}'.format(
             model_name, accuracy_mode, title, predefined_value))
         plt.show()
-
-
-def plot_series_from_df_by_id(
-        df,
-        ids,
-        attr,
-        id_col_name="id",
-        time_col_name="TimeStamp"):
-    _, ax = plt.subplots()
-
-    labels = []
-    for identificator in ids:
-        current_serie = df[df[id_col_name] == identificator]
-        labels.append("Serie " + str(identificator))
-
-        plt.plot(current_serie[time_col_name], current_serie[attr])
-
-    ax.set_ylabel(attr)
-    ax.set_xlabel(time_col_name)
-    ax.legend(labels)
-
-    plt.show()
-
-
-def plot_series(series, labels, x_label="TimeStamp", y_label="Value"):
-    _, ax = plt.subplots()
-
-    for current_serie in series:
-        plt.plot(current_serie.index, current_serie.values)
-
-    ax.set_ylabel(y_label)
-    ax.set_xlabel(x_label)
-    ax.legend(labels)
-
-    plt.show()

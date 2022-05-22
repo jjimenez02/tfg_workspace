@@ -8,6 +8,33 @@ from collections import defaultdict
 from sklearn.metrics import classification_report
 
 
+def compute_classification_reports_means(reports: list):
+    n_reports = len(reports)
+    final_report = defaultdict(lambda: defaultdict(lambda: 0.0))
+    final_report['accuracy'] = 0.0
+
+    # Counter
+    for report in reports:
+        for key in report.keys():
+            if key == 'accuracy':
+                final_report['accuracy'] +=\
+                    report['accuracy']
+            else:
+                for subkey in report[key].keys():
+                    final_report[key][subkey] +=\
+                        report[key][subkey]
+
+    # Mean computation
+    for key in final_report.keys():
+        if key == 'accuracy':
+            final_report['accuracy'] /= n_reports
+        else:
+            for subkey in final_report[key].keys():
+                final_report[key][subkey] /= n_reports
+
+    return final_report
+
+
 def train_test_split(
         df,
         relation_with_series=None,
