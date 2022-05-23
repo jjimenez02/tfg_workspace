@@ -14,28 +14,33 @@ from keras.layers import Dense, LSTM
 
 
 def compute_classification_reports_means(reports: list):
-    n_reports = len(reports)
-    final_report = defaultdict(lambda: defaultdict(lambda: 0.0))
-    final_report['accuracy'] = 0.0
+    final_report = defaultdict(lambda: defaultdict(lambda: ()))
+    aux_report = defaultdict(lambda: defaultdict(lambda: []))
+    final_report['accuracy'] = ()
+    aux_report['accuracy'] = []
 
-    # Counter
+    # Accumulate all data into dict-lists
     for report in reports:
         for key in report.keys():
             if key == 'accuracy':
-                final_report['accuracy'] +=\
-                    report['accuracy']
+                aux_report['accuracy']\
+                    .append(report['accuracy'])
             else:
                 for subkey in report[key].keys():
-                    final_report[key][subkey] +=\
-                        report[key][subkey]
+                    aux_report[key][subkey]\
+                        .append(report[key][subkey])
 
-    # Mean computation
-    for key in final_report.keys():
+    # Mean & Std computation
+    for key in aux_report.keys():
         if key == 'accuracy':
-            final_report['accuracy'] /= n_reports
+            final_report['accuracy'] =\
+                (np.mean(aux_report['accuracy']),
+                 np.std(aux_report['accuracy']))
         else:
-            for subkey in final_report[key].keys():
-                final_report[key][subkey] /= n_reports
+            for subkey in aux_report[key].keys():
+                final_report[key][subkey] =\
+                    (np.mean(aux_report[key][subkey]),
+                     np.std(aux_report[key][subkey]))
 
     return final_report
 

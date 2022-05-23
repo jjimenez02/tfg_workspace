@@ -95,11 +95,13 @@ def plot_series(series, labels, x_label="TimeStamp", y_label="Value"):
 def pretty_print_classification_report_dict(report: defaultdict):
     for key in report.keys():
         if key == 'accuracy':
-            print("{}: {}".format('Accuracy', report[key]))
+            print("{}: {} +/- {}".format(
+                'Accuracy', report[key][0], report[key][1]))
         else:
             print("{}:".format(key))
             for subkey in report[key].keys():
-                print("\t{}: {}".format(subkey, report[key][subkey]))
+                print("\t{}: {} +/- {}".format(
+                    subkey, report[key][subkey][0], report[key][subkey][1]))
 
 
 def __get_unique_values_on_index(list_of_values, index):
