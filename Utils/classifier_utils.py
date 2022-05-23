@@ -41,8 +41,9 @@ def compute_classification_reports_means(reports: list):
                 final_report[key][subkey] =\
                     (np.mean(aux_report[key][subkey]),
                      np.std(aux_report[key][subkey]))
+                final_report[key] = dict(final_report[key])
 
-    return final_report
+    return dict(final_report)
 
 
 def apply_lstm_format(

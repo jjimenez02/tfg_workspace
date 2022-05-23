@@ -9,7 +9,8 @@ def plot_score(
         inverse=False,
         mode='normal',
         in_same_graphic=False,
-        accuracy_mode='accuracy'):
+        accuracy_mode='accuracy',
+        metric_name='accuracy'):
     if inverse:
         title = hyper_parameters_pair_names[0]
         x_label = hyper_parameters_pair_names[1]
@@ -41,7 +42,8 @@ def plot_score(
             x_label,
             title,
             accuracy_mode,
-            model_name
+            model_name,
+            metric_name
         )
     else:
         __plot_in_different_graphs(
@@ -53,7 +55,8 @@ def plot_score(
             x_label,
             title,
             accuracy_mode,
-            model_name
+            model_name,
+            metric_name
         )
 
 
@@ -117,7 +120,8 @@ def __plot_in_same_graph(
         x_label,
         title,
         accuracy_mode,
-        model_name):
+        model_name,
+        metric_name):
     for predefined_value in all_predefined_values:
         x_axis = []
         y_axis = []
@@ -140,7 +144,7 @@ def __plot_in_same_graph(
 
     plt.legend(loc=(1.04, 0))
     plt.xlabel(x_label)
-    plt.ylabel('{}'.format(accuracy_mode.capitalize()))
+    plt.ylabel('{}'.format(metric_name.capitalize()))
     plt.title('{}\'s {} with predefined {}'.format(
         model_name, accuracy_mode, title))
     plt.show()
@@ -155,7 +159,8 @@ def __plot_in_different_graphs(
         x_label,
         title,
         accuracy_mode,
-        model_name):
+        model_name,
+        metric_name):
     for predefined_value in all_predefined_values:
         x_axis = []
         y_axis = []
@@ -177,7 +182,7 @@ def __plot_in_different_graphs(
 
         plt.plot(x_axis, y_axis)
         plt.xlabel(x_label)
-        plt.ylabel('{}'.format(accuracy_mode.capitalize()))
+        plt.ylabel('{}'.format(metric_name.capitalize()))
         plt.title('{}\'s {} with predefined {}={}'.format(
             model_name, accuracy_mode, title, predefined_value))
         plt.show()
