@@ -11,6 +11,7 @@ from sklearn.metrics import classification_report
 from keras.models import Sequential
 from keras.optimizers import RMSprop
 from keras.layers import Dense, LSTM
+from scipy.sparse.csr import csr_matrix
 
 
 def compute_classification_reports_means(reports: list):
@@ -59,7 +60,9 @@ def apply_lstm_format(
         int(series_length/sequences_fragmenter),
         X.shape[1]
     )
-    y = labels_encoder.transform(y.reshape(-1, 1)).toarray()
+    y = labels_encoder.transform(y)
+    if y.__class__ == csr_matrix:
+        y = y.toarray()
     y = np.repeat(y, repeats=sequences_fragmenter, axis=0)
 
     return X, y
@@ -67,9 +70,9 @@ def apply_lstm_format(
 
 def lstm_build_model(units, learning_rate, n_classes):
     nn = Sequential()
-    nn.add(LSTM(units=12))
-    nn.add(Dense(4, 'sigmoid'))
-    lstm_compile_model(nn, 0.001)
+    nn.add(LSTM(units=units))
+    nn.add(Dense(n_classes, 'softmax'))
+    lstm_compile_model(nn, learning_rate)
     return nn
 
 

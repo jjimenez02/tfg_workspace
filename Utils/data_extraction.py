@@ -132,9 +132,12 @@ class Data():
             class_col_name='class'):
 
         columns = list(self.derived_data.columns)
-        columns.remove(id_col_name)
-        columns.remove(time_col_name)
-        columns.remove(class_col_name)
+        if id_col_name in columns:
+            columns.remove(id_col_name)
+        if time_col_name in columns:
+            columns.remove(time_col_name)
+        if class_col_name in columns:
+            columns.remove(class_col_name)
         return {'id': id_col_name,
                 'time': time_col_name,
                 'class': class_col_name,
