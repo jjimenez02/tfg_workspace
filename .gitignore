@@ -2,5 +2,4 @@ __pycache__/
 data/
 Test*
 *_large_report.html
-*.pkl
-pkl/
+*_data.pkl
