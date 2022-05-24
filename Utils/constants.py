@@ -13,6 +13,7 @@ LSTM_FITTED_LABELS_ENCODER = 'fitted_labels_encoder'
 LSTM_COMPILE_FUNCTION = 'compile_fun'
 LSTM_ARGMAX_FUNCTION = 'argmax_fun'
 LSTM_N_CLASSES = 'n_classes'
+LSTM_CLASS_WEIGHTS = 'class_weights'
 
 LSTM_HYP_PARAM_EPOCHS = 'epochs'
 LSTM_HYP_PARAM_UNITS = 'units'

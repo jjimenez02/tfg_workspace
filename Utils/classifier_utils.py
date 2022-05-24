@@ -577,6 +577,7 @@ def __fit_estimator(
             X_train,
             y_train,
             epochs=lstm_dict[cs.LSTM_HYP_PARAM_EPOCHS],
+            class_weight=lstm_dict[cs.LSTM_CLASS_WEIGHTS],
             verbose=0
         )
     else:
