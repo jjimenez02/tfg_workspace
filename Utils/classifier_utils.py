@@ -558,6 +558,10 @@ def __fit_estimator(
         y_train = X_train.assign(class_name=y_train).groupby(
             id_col_name).first()['class_name'].to_numpy()
 
+        if lstm_dict[cs.LSTM_N_CLASSES] > 2:
+            # OneHotEncoder's requirements
+            y_train = y_train.reshape(-1, 1)
+
         # LSTM's input shape
         X_train, y_train = apply_lstm_format(
             X_train.to_numpy(),
@@ -607,6 +611,10 @@ def __predict_estimator(
             id_col_name).first()['class_name'].to_numpy()
 
         if estimator_type == cs.ESTIMATOR_LSTM:
+            if lstm_dict[cs.LSTM_N_CLASSES] > 2:
+                # OneHotEncoder's requirements
+                y_test = y_test.reshape(-1, 1)
+
             # LSTM's input shape
             X_test, y_test = apply_lstm_format(
                 X_test.to_numpy(),
