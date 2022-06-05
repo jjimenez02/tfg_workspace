@@ -305,21 +305,15 @@ class Data():
         series_id = pd.unique(data[id_col_name])
         windows_per_serie = defaultdict(list)
 
-        actual_n_windows = 0.0
         for serie_id in series_id:
             actual_serie = data[data[id_col_name] == serie_id]
-            if (n_windows is None):
-                actual_n_windows = math.ceil(
-                    float(actual_serie.shape[0])/float(window_size))
-            else:
-                actual_n_windows = n_windows
-
             new_df = new_df.append(self.__split_serie_into_windows(
                 actual_serie,
                 windows_per_serie,
                 serie_id,
-                actual_n_windows,
-                id_col_name
+                window_size=window_size,
+                n_windows=n_windows,
+                id_col_name=id_col_name
             ), ignore_index=True)
 
         return self.__save_data(
@@ -340,13 +334,14 @@ class Data():
         '''
         This method will split train and test's sets.
         Available criterions are:
-            'tfm_marta': For each serie 'train_size' of his windows
-            will be put together in train's set (the rest will be put
+            'tfm_marta': For each serie, a 'train_size' percentage of his
+            windows will be put together in train's set (the rest will be put
             into test's set)
             'windowed': It will split train and test's sets by series
             identificators (windows of the same serie won't be in train
             and test's sets at the same time).
             'normal': It will simply split the data into train and test's sets.
+        It returns: X_train, X_test, y_train, y_test
         '''
         data = self.derived_data if df is None else df
 
@@ -485,17 +480,26 @@ class Data():
             serie,
             windows_per_serie,
             serie_id,
-            n_windows,
+            window_size=None,
+            n_windows=None,
             id_col_name='id'):
+        if (n_windows is None and window_size is None):
+            raise Exception("You have to specify a window size")
+
         new_df = pd.DataFrame()
         window_id = 0
-        window_size = serie.shape[0]//n_windows
+        if (window_size is None):
+            actual_window_size = serie.shape[0]//n_windows
+            actual_n_windows = n_windows
+        else:
+            actual_n_windows = serie.shape[0]//window_size
+            actual_window_size = window_size
 
         window_df = pd.DataFrame()
-        for i in range(0, n_windows):
+        for i in range(0, actual_n_windows):
             window_name = str(serie_id) + 'w' + str(window_id)
-            start_sample = i * window_size
-            end_sample = start_sample + window_size
+            start_sample = i * actual_window_size
+            end_sample = start_sample + actual_window_size
 
             window_df = serie.iloc[start_sample:end_sample, :]
             window_df = window_df.assign(**{id_col_name: window_name})
