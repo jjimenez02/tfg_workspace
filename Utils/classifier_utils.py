@@ -9,7 +9,7 @@ from utils import codifications
 from collections import defaultdict
 from sklearn.metrics import classification_report
 from keras.models import Sequential
-from keras.optimizers import RMSprop
+from keras.optimizers import RMSprop, Adam
 from keras.layers import Dense, LSTM
 from scipy.sparse.csr import csr_matrix
 
@@ -70,16 +70,19 @@ def apply_lstm_format(
 
 def lstm_build_model(units, learning_rate, n_classes):
     nn = Sequential()
-    nn.add(LSTM(units=units))
-    nn.add(Dense(n_classes, 'softmax'))
+    nn.add(LSTM(units=units))  # FIXME: HardCoded
+    if(n_classes == 2):
+        nn.add(Dense(1, 'sigmoid'))
+    else:
+        nn.add(Dense(n_classes, 'softmax'))
     lstm_compile_model(nn, learning_rate)
     return nn
 
 
 def lstm_compile_model(nn, learning_rate):
     nn.compile(
-        optimizer=RMSprop(learning_rate=learning_rate),
-        loss='categorical_crossentropy'
+        optimizer=RMSprop(learning_rate=learning_rate),  # FIXME: HardCoded
+        loss='categorical_crossentropy'  # FIXME: HardCoded
     )
 
 
@@ -232,6 +235,7 @@ def tfm_marta_train_test_split(
 def train_validate(
         clf,
         df,
+        estimator_type,
         relation_with_series=None,
         train_test_split_method=None,
         times_to_repeat=5,
@@ -243,12 +247,34 @@ def train_validate(
         id_col_name='id',
         class_col_name='class',
         n_jobs=-2,
-        custom_estimator=False,
-        return_attrs=[]):
+        return_attrs=[],
+        lstm_dict={}):
+    '''
+    This method will execute multiple times a classificator over
+    differents splits of the data.
+
+    You can determine wether the classificator is:
+        - 'classic': SkLearn's classificators
+        - 'LSTM': Keras' LSTM model
+        - 'SMTS': SMTS' custom model
+
+    If you select LSTM as the estimator you must give the following
+    parameters via ``lstm_dict``:
+        - series_length (int)
+        - sequences_fragmenter (int)
+        - fitted_labels_encoder (_BaseEncoder)
+        - argmax_fun (fun) -> None for binary classification
+        - n_classes (int)
+        - epochs (int)
+        - units (int)
+        - learning_rate (float)
+    '''
+
     random.seed(seed)
     return Parallel(n_jobs=n_jobs)(delayed(__parallel_train_validate)(
-        clone_estimator(clf, custom_estimator),
+        clone_estimator(clf, estimator_type),
         df,
+        estimator_type,
         train_test_split_method,
         standardize_columns,
         drop_columns,
@@ -257,7 +283,8 @@ def train_validate(
         id_col_name,
         class_col_name,
         relation_with_series,
-        return_attrs
+        return_attrs,
+        lstm_dict
     ) for _ in range(0, times_to_repeat))
 
 
@@ -417,6 +444,7 @@ def __train_test_split_param_verification(
 def __parallel_train_validate(
         clf,
         df,
+        estimator_type,
         train_test_split_method,
         standardize_columns,
         drop_columns,
@@ -425,8 +453,9 @@ def __parallel_train_validate(
         id_col_name='id',
         class_col_name='class',
         relation_with_series=None,
-        return_attrs=[]):
-    X_train, X_test, y_train, y_test = train_test_split_method(
+        return_attrs=[],
+        lstm_dict={}):
+    train, test, y_train, y_test = train_test_split_method(
         df,
         relation_with_series,
         train_size=train_size,
@@ -437,10 +466,33 @@ def __parallel_train_validate(
         class_col_name=class_col_name,
         initialize_seed=False
     )
-    clf.fit(X_train, y_train)
+
+    train.insert(train.shape[1], class_col_name, y_train)
+    test.insert(test.shape[1], class_col_name, y_test)
+    partitions = {'train': None, 'test': None}
+
+    clf = __fit_estimator(
+        clf,
+        train,
+        partitions,
+        estimator_type,
+        drop_columns,
+        id_col_name,
+        lstm_dict
+    )
+    y_test, y_pred = __predict_estimator(
+        clf,
+        test,
+        partitions,
+        estimator_type,
+        drop_columns,
+        id_col_name,
+        lstm_dict
+    )
 
     return_dict = {}
-    return_dict['score'] = clf.score(X_test, y_test)
+    return_dict['report'] = classification_report(
+        y_test, y_pred, output_dict=True, zero_division=0)
     for attr in return_attrs:
         return_dict[attr] = getattr(clf, attr)
 
@@ -555,22 +607,28 @@ def __fit_estimator(
         clf.fit(X_train, y_train)
     elif estimator_type == cs.ESTIMATOR_LSTM:
         # Collapse into one class per serie (auto. done in SMTS' train)
-        y_train = X_train.assign(class_name=y_train).groupby(
-            id_col_name).first()['class_name'].to_numpy()
+        y_train_groupped = X_train.assign(class_name=y_train).groupby(
+            id_col_name, sort=False).first()['class_name'].to_numpy()
 
         if lstm_dict[cs.LSTM_N_CLASSES] > 2:
             # OneHotEncoder's requirements
             y_train = y_train.reshape(-1, 1)
+            y_train_groupped = y_train_groupped.reshape(-1, 1)
 
         # LSTM's input shape
-        X_train, y_train = apply_lstm_format(
-            X_train.to_numpy(),
-            y_train,
-            len(pd.unique(X_train[id_col_name])),
-            lstm_dict[cs.LSTM_SERIES_LENGTH],
-            lstm_dict[cs.LSTM_SEQUENCES_FRAGMENTER],
-            lstm_dict[cs.LSTM_FITTED_LABELS_ENCODER]
-        )
+        if (cs.LSTM_RESHAPE_TO_ONE_TIMESTEP in lstm_dict and
+                lstm_dict[cs.LSTM_RESHAPE_TO_ONE_TIMESTEP] is True):
+            X_train = X_train.drop(id_col_name, axis=1).to_numpy()
+            X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
+        else:
+            X_train, y_train = apply_lstm_format(
+                X_train.to_numpy(),
+                y_train_groupped,
+                len(pd.unique(X_train[id_col_name])),
+                lstm_dict[cs.LSTM_SERIES_LENGTH],
+                lstm_dict[cs.LSTM_SEQUENCES_FRAGMENTER],
+                lstm_dict[cs.LSTM_FITTED_LABELS_ENCODER]
+            )
 
         clf = lstm_build_model(
             lstm_dict[cs.LSTM_HYP_PARAM_UNITS],
@@ -582,6 +640,7 @@ def __fit_estimator(
             y_train,
             epochs=lstm_dict[cs.LSTM_HYP_PARAM_EPOCHS],
             class_weight=lstm_dict[cs.LSTM_CLASS_WEIGHTS],
+            batch_size=lstm_dict[cs.LSTM_SERIES_LENGTH],  # FIXME: HardCoded
             verbose=0
         )
     else:
@@ -607,23 +666,32 @@ def __predict_estimator(
     if (estimator_type == cs.ESTIMATOR_SMTS or
             estimator_type == cs.ESTIMATOR_LSTM):
         # Collapse into one class per serie
-        y_test = X_test.assign(class_name=y_test).groupby(
-            id_col_name).first()['class_name'].to_numpy()
+        y_test_groupped = X_test.assign(class_name=y_test).groupby(
+            id_col_name, sort=False).first()['class_name'].to_numpy()
+
+        if estimator_type == cs.ESTIMATOR_SMTS:
+            y_test = y_test_groupped
 
         if estimator_type == cs.ESTIMATOR_LSTM:
             if lstm_dict[cs.LSTM_N_CLASSES] > 2:
                 # OneHotEncoder's requirements
                 y_test = y_test.reshape(-1, 1)
+                y_test_groupped = y_test_groupped.reshape(-1, 1)
 
             # LSTM's input shape
-            X_test, y_test = apply_lstm_format(
-                X_test.to_numpy(),
-                y_test,
-                len(pd.unique(X_test[id_col_name])),
-                lstm_dict[cs.LSTM_SERIES_LENGTH],
-                lstm_dict[cs.LSTM_SEQUENCES_FRAGMENTER],
-                lstm_dict[cs.LSTM_FITTED_LABELS_ENCODER]
-            )
+            if (cs.LSTM_RESHAPE_TO_ONE_TIMESTEP in lstm_dict and
+                    lstm_dict[cs.LSTM_RESHAPE_TO_ONE_TIMESTEP] is True):
+                X_test = X_test.drop(id_col_name, axis=1).to_numpy()
+                X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
+            else:
+                X_test, y_test = apply_lstm_format(
+                    X_test.to_numpy(),
+                    y_test_groupped,
+                    len(pd.unique(X_test[id_col_name])),
+                    lstm_dict[cs.LSTM_SERIES_LENGTH],
+                    lstm_dict[cs.LSTM_SEQUENCES_FRAGMENTER],
+                    lstm_dict[cs.LSTM_FITTED_LABELS_ENCODER]
+                )
     elif estimator_type != cs.ESTIMATOR_SKLEARN:
         raise Exception(cs.ERR_INVALID_ESTIMATOR_TYPE_MSSG)
 
@@ -638,6 +706,10 @@ def __predict_estimator(
         # classification report.
         y_test = lstm_dict[cs.LSTM_FITTED_LABELS_ENCODER]\
             .inverse_transform(y_test)
+
+        if lstm_dict[cs.LSTM_N_CLASSES] == 2:
+            y_pred = y_pred > .5
+            y_pred = y_pred.astype('int')
         y_pred = lstm_dict[cs.LSTM_FITTED_LABELS_ENCODER]\
             .inverse_transform(y_pred)
 
@@ -650,6 +722,10 @@ def __get_sample_and_class_by_series_ids(
         drop_columns=[],
         id_col_name='id',
         class_col_name='class'):
+    if series_ids is None:
+        return df.drop(drop_columns, errors='ignore', axis=1),\
+            df[class_col_name].to_numpy()
+
     X = df.loc[df[id_col_name].isin(series_ids)].drop(
         drop_columns, errors='ignore', axis=1)
     y = df.loc[df[id_col_name].isin(series_ids)][class_col_name]\

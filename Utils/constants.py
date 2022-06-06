@@ -14,6 +14,7 @@ LSTM_COMPILE_FUNCTION = 'compile_fun'
 LSTM_ARGMAX_FUNCTION = 'argmax_fun'
 LSTM_N_CLASSES = 'n_classes'
 LSTM_CLASS_WEIGHTS = 'class_weights'
+LSTM_RESHAPE_TO_ONE_TIMESTEP = 'reshape_to_one_timestep'
 
 LSTM_HYP_PARAM_EPOCHS = 'epochs'
 LSTM_HYP_PARAM_UNITS = 'units'
